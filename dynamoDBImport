@@ -1,0 +1,142 @@
+"use strict";
+
+const AWS = require("aws-sdk");
+
+const sql = require("mssql");
+
+AWS.config.update({
+  region: "us-east-2",
+  endpoint: "https://dynamodb.us-east-2.amazonaws.com",
+});
+
+const dyn = new AWS.DynamoDB();
+
+const docClient = new AWS.DynamoDB.DocumentClient();
+
+const config = {
+  user: "xxxx",
+  password: "xxxx",
+  server: "xxxx",
+  database: "xxxxxx",
+};
+
+async function main() {
+  sql.connect(config, (err) => {
+    if (err) {
+      console.log(err);
+      callback(err);
+    } else {
+      const req = new sql.Request();
+      var q = "select abbrev,name from canadianprovinces;";
+      req.query(q, (error, result) => {
+        console.log(q);
+        if (error) {
+          console.log("we have an error:" + error);
+        } else {
+          sql.close();
+          var records = result.recordsets[0];
+          records.forEach((element) => {
+            var abbrev = element.abbrev;
+            var name = element.name;
+
+            console.log(
+              createItem("canadianprovinces", {
+                abbrev: abbrev,
+                name: name,
+              })
+            );
+          });
+        }
+      });
+    }
+  });
+  sql.on("error", (err) => {
+    callback(err);
+  });
+
+  //console.log(await getallitems("gamecatalog"));
+}
+async function listTables() {
+  try {
+    const data = await dyn.listTables().promise();
+    return JSON.stringify(data);
+  } catch (error) {
+    return error;
+  }
+}
+
+async function getallitems(tableName) {
+  try {
+    var params = {
+      TableName: tableName,
+    };
+    const data = await docClient.scan(params).promise();
+    return JSON.stringify(data);
+  } catch (error) {
+    return error;
+  }
+}
+
+function createGameCatalog() {
+  var params = {
+    TableName: "gamecatalog",
+    KeySchema: [
+      { AttributeName: "gamename", KeyType: "HASH" }, //Partition key
+      { AttributeName: "gameid", KeyType: "RANGE" }, //Sort key
+    ],
+    AttributeDefinitions: [
+      { AttributeName: "gamename", AttributeType: "S" },
+      { AttributeName: "gameid", AttributeType: "S" },
+    ],
+    ProvisionedThroughput: {
+      ReadCapacityUnits: 3,
+      WriteCapacityUnits: 3,
+    },
+  };
+
+  dyn.createTable(params, function (err, data) {
+    if (err) {
+      console.log(
+        "Unable to create table. Error JSON:",
+        JSON.stringify(err, null, 2)
+      );
+    } else {
+      console.log("Created table:" + data.TableDescription.TableName);
+    }
+  });
+}
+
+const createItem = (tableName, item) => {
+  var params = {
+    TableName: tableName,
+    Item: item,
+  };
+
+  console.log(JSON.stringify(params));
+  docClient.put(params, function (err, data) {
+    if (err) {
+      console.error(
+        "Unable to add item. Error JSON:",
+        JSON.stringify(err, null, 2)
+      );
+    } else {
+      console.log("Added item:", JSON.stringify(data, null, 2));
+    }
+  });
+};
+
+async function checkTable(tableName) {
+  status = "false";
+  console.log("Check table: " + tableName);
+  var params = {
+    TableName: tableName /* required */,
+  };
+  try {
+    await dyn.describeTable(params).promise();
+    return true;
+  } catch (error) {
+    return false;
+  }
+}
+
+main();
